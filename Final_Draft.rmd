@@ -1,0 +1,129 @@
+---
+title: 'Project 1: Aircraft Arrival Delay Analysis'
+author: "T. Gianelle, S. Srivastava, B. Waite"
+date: "6/8/2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Problem Statement: 
+
+Using data from the U.S. Department of Transportation for the top 25 busiest airports in the United States, build a linear model to predict the total annual flight delay (in minutes) that can be expected based on a number of explanatory variables related to airport location, air carrier (airline), flight volume at the airport, and previously reported reasons for delay as reported by the carrier. 
+
+## Learning objectives: 
+
+_Objective 1:_ Display the ability to build regression models using the skills and discussions from Unit 1 and 2.   
+
+_Objective 2:_ Perform a secondary analysis using the tools from Unit 3 or Unit 4.  You only need to do one, pick the one that makes the most sense.
+
+## Data Source: 
+
+The subject data set is available online from the Bureau of Transportation Statistics website at:
+
+https://www.transtats.bts.gov/OT_Delay/OT_DelayCause1.asp?pn=1
+
+For this analysis, we selected a one year period from January 2018 through December 2018. 
+
+The data report on U.S. Airline arrival delays. A supplementary data set containing airport codes, names, and locations was also identified, but contains no measured study information. It is solely used to allow for additional descriptive information in the data set. This was obtained from a Kaggle project available at:
+
+https://www.kaggle.com/usdot/flight-delays
+
+
+## Exploratory Data Analysis: 
+
+```{r ingest}
+
+#Read in the base data set
+library(readr)
+arrivalData = read.csv('2018_airline_data.csv') 
+airportData = read.csv('airports.csv')
+
+#Do some cleaning and merge the raw data and supplemental data
+arrivalData = arrivalData[,-c(22)] 
+arrivalData = merge(arrivalData, airportData, by.x="airport", by.y="IATA_CODE", all.x = TRUE) 
+arrivalData = arrivalData[,-c(6)] 
+names(arrivalData)[1] = "IATA_CODE"
+
+dim(arrivalData)
+```
+
+The original data set contained over 20,000 records. 
+
+```{r}
+knitr::kable(head(arrivalData))
+```
+
+As is shown by the sample above, each record was for a specific airport, airline, reporting each month of 2018. This led to a number of records where significant portions of the values were zero. We chose to address this problem by removing the "month" variable and summarizing the records for the year. This, along with the focus on the top 25 busiest airports, allowed us to obtain a much more robust data set. 
+
+Rather than just using the number of arriving flights -- which is contained within the data set -- as an indication of the busiest airports, we used an internet reference indicating the busiest airports in 2018. This was derived from: According to: https://www.tripsavvy.com/busiest-airports-in-the-usa-3301020
+
+```{r}
+busiest = data.frame(c("ATL","ORD","LAX","DFW","JFK","DEN","SFO","LAS","PHX","IAH","CLT","MIA","MCO","EWR","SEA","MSP","DTW","PHL","BOS","LGA","FLL","BWI","IAD","SLC","MDW"))
+names(busiest) = c("IATA_CODE")
+busiest = merge(busiest,arrivalData,by.x = "IATA_CODE",by.y="IATA_CODE")
+
+attach(busiest)
+```
+
+
+### Understanding the variables
+
+Variables available in the data set included (descriptions derived from documentation available from the source DOT site): 
+
+Variable Name |	Definition
+--------------|----------------
+IATA_CODE 	  |International Air Transport Association Code for airport
+year 	        |year of statistics for airport, treated as categorical
+month 	      |month of statistics for airport, treated as categorical
+carrier 	    |Two-letter identifier for reporting airline
+carrier name 	|Full name of carrier for reporting airline
+arr_flights 	|Number of flights arriving at airport in month / year
+arr_del15 	|Number of flights arriving at airport with at least 15 minute delay in month/year
+carrier_ct 	|Number of flights arriving delayed due to carrier
+weather_ct 	|Number of flights arriving delayed due to weather
+nas_ct 	|Number of flights arriving delayed due to National Airspace System (Air Traffic Control delays)
+security_ct 	|Number of flights arriving delayed due to Security
+late_aircraft_ct 	|Number of flights arriving delayed due to late aircraft at origin
+arr_cancelled 	|Number of flights whose arrival was canceled
+arr_diverted 	|Number of flights whose arrival was diverted to another airfield
+arr_delay 	|Amount of delay in minutes (total)
+carrier_delay 	|Amount of delay in minutes attributed to carrier
+weather_delay 	|Amount of delay in minutes attributed to weather
+nas_delay 	|Amount of delay in minutes attributed to NAS
+security_delay 	|Amount of delay in minutes attributed to security
+late_aircraft_delay 	|Amount of delay in minutes attributed to late aircraft at origin
+AIRPORT 	|Airport common name
+CITY 	|Airport City
+STATE 	|Airport State
+COUNTRY 	|Airport Country
+LATITUDE 	|Airport latitude
+LONGITUDE 	|Airport longitude
+
+Reviewing the data, it is important to recognize that arr_delay -- or selected response variable -- and the other x_delay variables are directly related. All of the x_delay variables represent a subset of the time of delay due to a specific reason. As a result, we exclude these from our analysis. Similarly, the arr_del15 variable is composed of the totals of the x_ct variables. In this case we do want to consider the numbers of flights delayed due to these various reasons, but do not want to include two strongly co-linear variables, so we will leave arr_del15 out and rely on its component parts. Common names for the airport and carriers are retained for potential presentation at a later date, but are also not used in the analysis. 
+
+This means that our final data set looks as follows where each row contains delay data for a specific airport and airline for the year. Our downsizing leaves a data set of 313 rows and 15 variables: 
+
+```{r}
+keeps = c("IATA_CODE","carrier","carrier_name","arr_flights","carrier_ct","weather_ct","nas_ct","security_ct","late_aircraft_ct","arr_delay","AIRPORT","CITY","STATE","LATITUDE","LONGITUDE")
+busiest = busiest[keeps]
+
+library(dplyr)
+finaldata = busiest %>%
+  group_by(IATA_CODE,carrier) %>%
+  summarize(carrier_name = carrier_name[1], arr_flights = sum(arr_flights), carrier_ct = sum(carrier_ct),weather_ct = sum(weather_ct), nas_ct = sum(nas_ct),security_ct = sum(security_ct), late_aircraft_ct = sum(late_aircraft_ct), arr_delay = sum(arr_delay), AIRPORT = AIRPORT[1],CITY = CITY[1], STATE = STATE[1], LATITUDE = LATITUDE[1], LONGITUDE = LONGITUDE[1])
+
+knitr::kable(finaldata)
+
+knitr::kable(dim(finaldata))
+```
+
+
+## About these data and experimental design
+
+The data used in this study were not collected as part of a designed experiment. They are purely observational data as self-reported by the air carriers to the U.S. Government. The causes of each delay described in the data were self selected by the air carriers. Therefore, this data cannot be used to draw experimental inferences associated with the cause of airport delays and do not necessarily represent the results that would be obtained for other populations -- in this case airlines operating from this set of airports. Any inferences could inform the need for more robust data collection and/or additional studies using more well designed approaches. 
+
+
+
