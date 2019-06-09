@@ -1,0 +1,202 @@
+---
+author: "Andy Nguyen, Amy Markum, Richard Hart, Tom Gianelle"
+date: "3/28/2019"
+output:
+  html_document:
+    keep_md: yes
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(leaps)
+library(car)
+library(ggplot2)
+library(corrplot)
+library(MASS)
+library(rpart.plot)
+library(ROSE)
+library(caret)
+library(gridExtra)
+library(grid)
+library(lattice)
+
+```
+
+``` {r SessionInfo}
+sessionInfo()
+```
+##EDA  
+The first step of any model building process is to conduct a thorough exploratory data analysis (EDA) once the main study question and goals are defined.  We will be conducting data analysis of 2018 airline delay data.
+
+Checking for the assumptions below:
+
+a.	Linear relationship between the response variable and the explanatory variables.  
+b.	Multivariate Normality–The residuals are normally distributed.
+c.	No Multicollinearity—Multiple regression assumes that the explanatory variables are not highly correlated with each other.  
+d.	Homoscedasticity–Variance of error terms are similar across the values of the independent variables.  
+
+
+Lets view the data first below.  The goal of this study is to understand what explanatory variables contribute to the airline flight delays.  Among the variables in the data set, we have information such as airline code & name, airport code & name, weather delay, carrier delay, security delay, etc.
+
+There are 20231 rows that have the airline carrier by aggregated delay for 2018.  
+
+There are 22 variables.   There are 3 variables excluded in EDA because low number of occurrences.  The 3 variables that were excluded are security delay data (2) and arrival diverted data (1).
+
+```{r read}
+FltData <- read.csv(file="/Users/tomgianelle/Documents/SMU/_Applied Statistics/Project 1 - Airline Delays/Final_Data.csv", header=TRUE, sep=",")
+dim(FltData)
+
+summary(FltData)
+
+#AirlineDelayDf <- data.frame(FltData[16], as.factor(FltData[,2]), as.factor(FltData[,3]), FltData[,7:11], FltData[,13:14], FltData[, 17:19], FltData[,21])
+head(FltData)
+#col_headings <- c("arr_delay","month","airline", "arr_flights", "arr_del15", "carrier_ct", "weather_ct", "nas_ct", "late_aircraft_ct", "arr_cancelled", "carrier_delay", "weather_delay", "nas_delay", "late_aircraft_delay")
+#names(AirlineDelayDf) <- col_headings
+```
+
+``` {r 2b, include = FALSE, echo = FALSE}
+#pairs(AirlineDelayDf)
+pairs(FltData[,1:10], gap=1/10)
+```
+
+### Multicollinearity check
+
+In below multicollinearity check, five variables have VIF less 10.   The variables are arr_del15, carrier_ct, weather_ct, nas_ct, late_aircraft_ct.   All of the other variables show a weak multicollinearity correlation to response variable "arr_delay".
+
+The five variables with VIF greater than will be excluded from study.
+``` {r vif}
+FltData_Cont <- data.frame(FltData[,4:10])
+#FltData_Cont <- data.frame(FltData[,1:10], FltData[,14:15])
+#full.model<-lm(log(arr_delay)~log(arr_flights)+log(carrier_ct)+log(weather_ct)+log(nas_ct)+log(security_ct)+log(late_aircraft_ct),data=FltData_Cont)  
+full.model<-lm(log(arr_delay)~arr_flights+carrier_ct+weather_ct+nas_ct+security_ct+late_aircraft_ct,data=FltData_Cont) 
+vif(full.model)
+# removed collated variables above 10.
+full.model<-lm(log(arr_delay)~carrier_ct+weather_ct+nas_ct+security_ct,data=FltData_Cont)
+vif(full.model)
+
+```
+
+
+### Prediction
+
+``` {r Prediction}
+set.seed(110)
+index<-sample(1:dim(FltData)[1],155,replace=T)
+train<-FltData[index,]
+test<-FltData[-index,]
+summary(lm(log(arr_delay)~IATA_CODE+carrier+carrier_ct+weather_ct+nas_ct+security_ct,data=FltData))
+#summary(lm(log(arr_delay)~carrier_ct+weather_ct+nas_ct+security_ct+LATITUDE+LONGITUDE,data=FltData))
+#reg.fwd=regsubsets(arr_delay~month+airline+arr_flights+arr_cancelled+carrier_delay+weather_delay+nas_delay+late_aircraft_delay,data=AirlineDelayDf,method="forward",nvmax=9)
+#reg.fwd=regsubsets(log(arr_delay)~IATA_CODE+carrier+carrier_ct+weather_ct+nas_ct+security_ct,data=FltData,method="forward",nvmax=6)
+#reg.fwd=regsubsets(log(arr_delay)~carrier_ct+weather_ct+nas_ct+security_ct+LATITUDE+LONGITUDE,data=FltData,method="forward",nvmax=6)
+#df <-data.frame(log(FltData$arr_delay),log(FltData$arr_flights),log(FltData$carrier_ct),log(FltData$weather_ct),log(FltData$nas_ct),log(FltData$security_ct),log(FltData$late_aircraft_ct))
+reg.fwd=regsubsets(log(arr_delay)~IATA_CODE+carrier+carrier_ct+weather_ct+nas_ct+security_ct,data=FltData,method="forward",nvmax=6)
+
+summary(reg.fwd)$adjr2
+summary(reg.fwd)$rss
+summary(reg.fwd)$bic
+
+#reg.fwd=regsubsets(arr_delay~IATA_CODE+carrier+carrier_ct+weather_ct+nas_ct+security_ct+LATITUDE+LONGITUDE,data=FltData,method="backward",nvmax=8)
+
+#summary(reg.fwd)$adjr2
+#summary(reg.fwd)$rss
+#summary(reg.fwd)$bic
+
+par(mfrow=c(1,3))
+bics<-summary(reg.fwd)$bic
+plot(1:6,bics,type="l",ylab="BIC",xlab="# of predictors")
+index<-which(bics==min(bics))
+points(index,bics[index],col="red",pch=10)
+
+adjr2<-summary(reg.fwd)$adjr2
+plot(1:6,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
+index<-which(adjr2==max(adjr2))
+points(index,adjr2[index],col="red",pch=10)
+
+rss<-summary(reg.fwd)$rss
+plot(1:6,rss,type="l",ylab="train RSS",xlab="# of predictors")
+index<-which(rss==min(rss))
+points(index,rss[index],col="red",pch=10)
+
+```
+Once we have our model fits on the training data set, all we need to do is predict the models onto the training data set and produce ASE type plots for each step of the forward selection.  Courtesy of the ISLR texbook, a funciton is provided to easily predict the forward selection results on a test set.
+
+```{r, echo=T}
+#Really handy predict function
+predict.regsubset =function (object , newdata ,id ,...){
+  form=as.formula (object$call [[2]])
+  mat=model.matrix(form ,newdata )
+  coefi=coef(object ,id=id)
+  xvars=names(coefi)
+  mat[,xvars]%*%coefi
+}
+```
+
+With the prediction function read in we can simply write a loop to predicted on each of the 20 models generated from the forward selection procedure and plot the ASE's.  I've included the training ASE for comparison.
+
+```{r, echo=T, fig.width=5,fig.height=4}
+
+
+testASE<-c()
+#note my index is to 8 since that what I set it in regsubsets
+for (i in 1:6){
+  predictions<-predict.regsubset(object=reg.fwd,newdata=test,id=i) 
+  testASE[i]<-mean((log(test$arr_delay)-predictions)^2)
+}
+par(mfrow=c(1,1))
+plot(1:6,testASE,type="l",xlab="# of predictors",ylab="test vs train ASE")
+index<-which(testASE==min(testASE))
+points(index,testASE[index],col="red",pch=10)
+rss<-summary(reg.fwd)$rss
+lines(1:6,rss/313,lty=3,col="blue")  #Dividing by 313 since ASE=RSS/sample size
+```
+
+
+### ANOVA
+
+```{r}
+mysummary<-function(x){
+  result<-c(length(x), min(x), max(x), IQR(x),mean(x),sd(x),sd(x)/length(x))
+  names(result)<-c("N","Min", "Max", "IQR","Mean","SD","SE")
+  return(result)
+}
+sumstats<-aggregate(log(arr_delay)~IATA_CODE+carrier,data=FltData,mysummary)
+sumstats<-cbind(sumstats[,1:2],sumstats[,-(1:2)])
+#sumstats
+ggplot(sumstats,aes(x=IATA_CODE,y=Mean,group=carrier,colour=carrier))+
+  ylab("Arrival Delay")+
+  geom_line()+
+  geom_point()+
+  geom_errorbar(aes(ymin=Mean-SD,ymax=Mean+SD),width=.1)
+
+```
+
+```{r}
+#model.fit<-aov(log(arr_delay)~IATA_CODE+carrier+IATA_CODE:carrier,data=FltData)
+model.fit<-aov(log(arr_delay)~IATA_CODE+carrier,data=FltData)
+par(mfrow=c(1,2))
+plot(model.fit$fitted.values,model.fit$residuals,ylab="Resdiduals",xlab="Fitted")
+qqnorm(model.fit$residuals)
+
+myfits<-data.frame(fitted.values=model.fit$fitted.values,residuals=model.fit$residuals)
+
+#Residual vs Fitted
+plot1<-ggplot(myfits,aes(x=fitted.values,y=residuals))+ylab("Residuals")+
+  xlab("Predicted")+geom_point()
+
+#QQ plot of residuals  #Note the diagonal abline is only good for qqplots of normal data.
+plot2<-ggplot(myfits,aes(sample=residuals))+
+  stat_qq()+geom_abline(intercept=mean(myfits$residuals), slope = sd(myfits$residuals))
+
+#Histogram of residuals
+plot3<-ggplot(myfits, aes(x=residuals)) + 
+  geom_histogram(aes(y=..density..),binwidth=1,color="black", fill="gray")+
+  geom_density(alpha=.1, fill="red")
+
+grid.arrange(plot1, plot2,plot3, ncol=3)
+```
+
+
+
